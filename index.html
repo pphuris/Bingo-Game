@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bingo Card 5x5</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8}
+    body{font-family:Inter,system-ui,Segoe UI,Arial;min-height:100vh;margin:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071022 0%, #07182b 100%);color:#e6eef6}
+    .app{width:100%;max-width:680px;padding:28px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{background:var(--accent);border:0;color:#042027;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    .card{background:rgba(255,255,255,0.02);padding:18px;border-radius:12px;box-shadow:0 6px 20px rgba(2,6,23,0.6)}
+    .board{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:520px;margin:10px auto}
+    .col-head{background:linear-gradient(90deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));text-align:center;padding:10px 6px;border-radius:8px;font-weight:700}
+    .cell{background:rgba(255,255,255,0.02);aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:22px;font-weight:700;cursor:pointer;user-select:none;transition:transform .12s,background .12s}
+    .cell:active{transform:scale(.98)}
+    .cell.stamped{background:linear-gradient(180deg, rgba(6,182,212,0.16), rgba(6,182,212,0.08));color:#022;text-decoration:line-through}
+    .cell.free{background:linear-gradient(180deg,#f8fafc, #e6f6f8);color:#022;cursor:default;text-decoration:none}
+    .actions{display:flex;gap:10px;align-items:center;margin-top:12px}
+    .search{display:flex;gap:8px;align-items:center}
+    input[type="number"]{width:100px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    small{color:var(--muted)}
+    footer{margin-top:12px;color:var(--muted);font-size:13px}
+    @media (max-width:600px){.board{gap:6px} .cell{font-size:18px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Bingo Card 5×5 (สุ่มใหม่ได้ — คลิกเพื่อ Stamp)</h1>
+      <div class="controls">
+        <button id="newCardBtn">การ์ดใหม่</button>
+        <button class="secondary" id="clearMarksBtn">ล้างเครื่องหมาย</button>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="board" id="board"></div>
+
+      <div class="actions">
+        <div class="search">
+          <input id="calledNumber" type="number" min="1" max="75" placeholder="เลขที่เรียก (1-75)" />
+          <button id="markCalled">Stamp เลขที่ถูกเรียก</button>
+        </div>
+        <div style="margin-left:auto">
+          <small>กดที่ช่องเพื่อ Stamp / ยกเลิก Stamp</small>
+        </div>
+      </div>
+
+      <footer>
+        หมายเหตุ: การ์ดนี้สร้างตามกฎ BINGO แบบคลาสสิค (B:1-15, I:16-30, N:31-45, G:46-60, O:61-75). ช่องกลางเป็น "FREE" และถูก stamp อัตโนมัติ
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    // Helper: generate unique random numbers in a range
+    function pickRandomUnique(rangeStart, rangeEnd, count) {
+      const pool = [];
+      for (let i = rangeStart; i <= rangeEnd; i++) pool.push(i);
+      // Fisher-Yates shuffle partial
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      return pool.slice(0, count);
+    }
+
+    const boardEl = document.getElementById('board');
+    const newCardBtn = document.getElementById('newCardBtn');
+    const clearMarksBtn = document.getElementById('clearMarksBtn');
+    const markCalledBtn = document.getElementById('markCalled');
+    const calledNumberInput = document.getElementById('calledNumber');
+
+    // Column ranges for classic BINGO
+    const colRanges = [ [1,15], [16,30], [31,45], [46,60], [61,75] ];
+
+    // Create the board UI
+    function renderCard(cardNumbers) {
+      boardEl.innerHTML = '';
+      // header B I N G O
+      const headers = ['B','I','N','G','O'];
+      headers.forEach(h => {
+        const hd = document.createElement('div');
+        hd.className = 'col-head';
+        hd.textContent = h;
+        boardEl.appendChild(hd);
+      });
+
+      // 5 rows x 5 cols
+      for (let r = 0; r < 5; r++){
+        for (let c = 0; c < 5; c++){
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const idx = r * 5 + c;
+
+          // center cell (row2 col2) -> FREE
+          if (r === 2 && c === 2){
+            cell.classList.add('free');
+            cell.textContent = 'FREE';
+            cell.dataset.value = 'FREE';
+            cell.classList.add('stamped'); // marked by default
+          } else {
+            const val = cardNumbers[idx];
+            cell.textContent = val;
+            cell.dataset.value = String(val);
+            cell.tabIndex = 0;
+            // toggle stamp on click or Enter/Space
+            cell.addEventListener('click', () => cell.classList.toggle('stamped'));
+            cell.addEventListener('keydown', (ev) => {
+              if (ev.key === 'Enter' || ev.key === ' '){
+                ev.preventDefault();
+                cell.classList.toggle('stamped');
+              }
+            });
+          }
+
+          boardEl.appendChild(cell);
+        }
+      }
+    }
+
+    // Build numbers for a new card following BINGO column rules
+    function generateCard() {
+      // We'll generate column-wise then flatten by rows
+      const cols = [];
+      for (let i = 0; i < 5; i++){
+        const [s,e] = colRanges[i];
+        // Need 5 numbers in each column, except the N column will have 4 because of FREE center
+        const need = (i === 2) ? 4 : 5;
+        cols[i] = pickRandomUnique(s,e,need);
+      }
+
+      // Now fill by rows (r0c0, r0c1 ... r1c0...)
+      const card = new Array(25).fill(null);
+      for (let r = 0; r < 5; r++){
+        for (let c = 0; c < 5; c++){
+          if (r === 2 && c === 2){
+            card[r*5 + c] = 'FREE';
+            continue;
+          }
+          // For column c, take the next number from cols[c]
+          // We'll pop from array to ensure uniqueness
+          if (!cols[c].length) {
+            // should not happen but just in case, refill
+            const [s,e] = colRanges[c];
+            cols[c] = pickRandomUnique(s,e,(c===2)?4:5);
+          }
+          card[r*5 + c] = cols[c].pop();
+        }
+      }
+      return card;
+    }
+
+    // Stamp all cells matching a called number
+    function stampCalledNumber(n) {
+      const cells = boardEl.querySelectorAll('.cell');
+      let found = false;
+      cells.forEach(cell => {
+        if (cell.dataset.value === String(n)){
+          cell.classList.add('stamped');
+          found = true;
+        }
+      });
+      return found;
+    }
+
+    // Clear stamps except FREE
+    function clearMarks() {
+      const cells = boardEl.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        if (!cell.classList.contains('free')) cell.classList.remove('stamped');
+      });
+    }
+
+    // Initialize
+    function init() {
+      const card = generateCard();
+      renderCard(card);
+    }
+
+    newCardBtn.addEventListener('click', () => init());
+    clearMarksBtn.addEventListener('click', () => clearMarks());
+
+    markCalledBtn.addEventListener('click', () => {
+      const val = Number(calledNumberInput.value);
+      if (!val || val < 1 || val > 75){
+        alert('กรุณากรอกเลขที่ถูกเรียก (1-75)');
+        return;
+      }
+      const ok = stampCalledNumber(val);
+      if (!ok) alert('เลขนี้ไม่ได้อยู่ในการ์ดนี้');
+      calledNumberInput.value = '';
+      calledNumberInput.focus();
+    });
+
+    // Allow Enter key to mark called number
+    calledNumberInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') markCalledBtn.click();
+    });
+
+    // start
+    init();
+  </script>
+</body>
+</html>
