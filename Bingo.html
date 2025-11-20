@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Bingo Card 5x5</title>
+  <style>
+     :root{
+      --bg:#fef9f5;
+      --card:#ffffff;
+      --accent:#ff6b6b;
+      --accent2:#ffd93d;
+      --muted:#64748b;
+      --cell-bg:#fffbf2;
+      --cell-stamp:#ffe27a;
+      --cell-stamp-text:#4a3900;
+    }
+    body{
+      font-family:Inter,system-ui,Segoe UI,Arial;
+      min-height:100vh;margin:0;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(180deg,#ffe6e6 0%, #fff8dc 100%);
+      color:#333;
+    }
+    .app{width:100%;max-width:680px;padding:28px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:22px;margin:0;color:#ff4d4d}
+    button{
+      background:var(--accent);
+      border:0;color:#fff;padding:10px 16px;
+      border-radius:10px;cursor:pointer;font-weight:600;
+      transition:transform .15s, background .15s;
+    }
+    button:hover{transform:translateY(-2px);background:#ff5252}
+    button:active{transform:scale(.96)}
+    button.secondary{background:var(--accent2);color:#3c2f00}
+
+    .card{
+      background:var(--card);
+      padding:22px;border-radius:16px;
+      box-shadow:0 6px 20px rgba(0,0,0,0.12);
+    }
+
+    .board{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:520px;margin:10px auto}
+    .col-head{
+      background:var(--accent2);
+      text-align:center;padding:12px 6px;border-radius:10px;
+      font-weight:700;color:#4a3900;font-size:18px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.15);
+    }
+    .cell{
+      background:var(--cell-bg);
+      aspect-ratio:1/1;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:12px;font-size:22px;font-weight:700;
+      cursor:pointer;user-select:none;
+      transition:transform .12s, background .2s, box-shadow .2s;
+      box-shadow:0 2px 4px rgba(0,0,0,0.1);
+    }
+    .cell:hover{transform:translateY(-3px);box-shadow:0 4px 10px rgba(0,0,0,0.18)}
+    .cell:active{transform:scale(.96)}
+
+    .cell.stamped{
+      background:var(--cell-stamp);
+      color:var(--cell-stamp-text);
+      box-shadow:0 4px 10px rgba(255,214,0,0.4);
+      text-decoration:line-through;
+    }
+
+    .cell.free{
+      background:linear-gradient(180deg,#fffbd5,#fff3a2);
+      color:#4a3900;cursor:default;text-decoration:none;
+      box-shadow:0 4px 10px rgba(255,214,0,0.35);
+    }
+
+    .actions{display:flex;gap:10px;align-items:center;margin-top:12px}
+    input[type="number"]{
+      width:110px;padding:10px;border-radius:10px;
+      border:2px solid #ffd93d;background:#fff7d1;color:#3a2f00;
+      font-weight:600;
+    }
+    small{color:var(--muted)}
+    footer{margin-top:16px;color:var(--muted);font-size:14px}
+    @media (max-width:600px){.board{gap:8px} .cell{font-size:18px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Bingo Card 5×5</h1>
+      <div class="controls">
+        <!-- <button id="newCardBtn">การ์ดใหม่</button> -->
+        <button class="secondary" id="clearMarksBtn">ล้างเครื่องหมาย</button>
+      </div>
+    </header>
+
+    <main class="card">
+      <div class="board" id="board"></div>
+
+      <div class="actions">
+        <div class="search">
+          <input id="calledNumber" type="number" min="1" max="75" placeholder="เลขที่เรียก (1-75)" />
+          <button id="markCalled">Stamp เลขที่ถูกเรียก</button>
+        </div>
+        <div style="margin-left:auto">
+          <small>กดที่ช่องเพื่อ Stamp / ยกเลิก Stamp</small>
+        </div>
+      </div>
+
+      <footer>
+        หมายเหตุ: การ์ดนี้สร้างตามกฎ BINGO แบบคลาสสิค (B:1-15, I:16-30, N:31-45, G:46-60, O:61-75). ช่องกลางเป็น "FREE" และถูก stamp อัตโนมัติ
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    // Helper: generate unique random numbers in a range
+    function pickRandomUnique(rangeStart, rangeEnd, count) {
+      const pool = [];
+      for (let i = rangeStart; i <= rangeEnd; i++) pool.push(i);
+      // Fisher-Yates shuffle partial
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      return pool.slice(0, count);
+    }
+
+    const boardEl = document.getElementById('board');
+    // const newCardBtn = document.getElementById('newCardBtn');
+    const clearMarksBtn = document.getElementById('clearMarksBtn');
+    const markCalledBtn = document.getElementById('markCalled');
+    const calledNumberInput = document.getElementById('calledNumber');
+
+    // Column ranges for classic BINGO
+    const colRanges = [ [1,15], [16,30], [31,45], [46,60], [61,75] ];
+
+    // Create the board UI
+    function renderCard(cardNumbers) {
+      boardEl.innerHTML = '';
+      // header B I N G O
+      const headers = ['B','I','N','G','O'];
+      headers.forEach(h => {
+        const hd = document.createElement('div');
+        hd.className = 'col-head';
+        hd.textContent = h;
+        boardEl.appendChild(hd);
+      });
+
+      // 5 rows x 5 cols
+      for (let r = 0; r < 5; r++){
+        for (let c = 0; c < 5; c++){
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const idx = r * 5 + c;
+
+          // center cell (row2 col2) -> FREE
+          if (r === 2 && c === 2){
+            cell.classList.add('free');
+            cell.textContent = 'FREE';
+            cell.dataset.value = 'FREE';
+            cell.classList.add('stamped'); // marked by default
+          } else {
+            const val = cardNumbers[idx];
+            cell.textContent = val;
+            cell.dataset.value = String(val);
+            cell.tabIndex = 0;
+            // toggle stamp on click or Enter/Space
+            cell.addEventListener('click', () => cell.classList.toggle('stamped'));
+            cell.addEventListener('keydown', (ev) => {
+              if (ev.key === 'Enter' || ev.key === ' '){
+                ev.preventDefault();
+                cell.classList.toggle('stamped');
+              }
+            });
+          }
+
+          boardEl.appendChild(cell);
+        }
+      }
+    }
+
+    // Build numbers for a new card following BINGO column rules
+    function generateCard() {
+      // We'll generate column-wise then flatten by rows
+      const cols = [];
+      for (let i = 0; i < 5; i++){
+        const [s,e] = colRanges[i];
+        // Need 5 numbers in each column, except the N column will have 4 because of FREE center
+        const need = (i === 2) ? 4 : 5;
+        cols[i] = pickRandomUnique(s,e,need);
+      }
+
+      // Now fill by rows (r0c0, r0c1 ... r1c0...)
+      const card = new Array(25).fill(null);
+      for (let r = 0; r < 5; r++){
+        for (let c = 0; c < 5; c++){
+          if (r === 2 && c === 2){
+            card[r*5 + c] = 'FREE';
+            continue;
+          }
+          // For column c, take the next number from cols[c]
+          // We'll pop from array to ensure uniqueness
+          if (!cols[c].length) {
+            // should not happen but just in case, refill
+            const [s,e] = colRanges[c];
+            cols[c] = pickRandomUnique(s,e,(c===2)?4:5);
+          }
+          card[r*5 + c] = cols[c].pop();
+        }
+      }
+      return card;
+    }
+
+    // Stamp all cells matching a called number
+    function stampCalledNumber(n) {
+      const cells = boardEl.querySelectorAll('.cell');
+      let found = false;
+      cells.forEach(cell => {
+        if (cell.dataset.value === String(n)){
+          cell.classList.add('stamped');
+          found = true;
+        }
+      });
+      return found;
+    }
+
+    // Clear stamps except FREE
+    function clearMarks() {
+      const cells = boardEl.querySelectorAll('.cell');
+      cells.forEach(cell => {
+        if (!cell.classList.contains('free')) cell.classList.remove('stamped');
+      });
+    }
+
+    // Initialize
+    //function init() {
+     // const card = generateCard();
+      //renderCard(card);
+    //}
+   
+	// Initialize — new card only when entering website NEW, but NOT when refreshing
+	(function init() {
+	  let savedCard = sessionStorage.getItem("bingoCard");
+
+	  if (savedCard) {
+		// ถ้ามีใน sessionStorage แปลว่าเป็นการรีเฟรช → ใช้การ์ดเดิม
+		renderCard(JSON.parse(savedCard));
+	  } else {
+		// ถ้าไม่มี → แปลว่าเปิดเว็บใหม่ (แท็บใหม่) → สุ่มใหม่
+		const card = generateCard();
+		sessionStorage.setItem("bingoCard", JSON.stringify(card));
+		renderCard(card);
+	  }
+	})();
+
+
+
+    // newCardBtn.addEventListener('click', () => init());
+    clearMarksBtn.addEventListener('click', () => clearMarks());
+
+    markCalledBtn.addEventListener('click', () => {
+      const val = Number(calledNumberInput.value);
+      if (!val || val < 1 || val > 75){
+        alert('กรุณากรอกเลขที่ถูกเรียก (1-75)');
+        return;
+      }
+      const ok = stampCalledNumber(val);
+      if (!ok) alert('เลขนี้ไม่ได้อยู่ในการ์ดนี้');
+      calledNumberInput.value = '';
+      calledNumberInput.focus();
+    });
+
+    // Allow Enter key to mark called number
+    calledNumberInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') markCalledBtn.click();
+    });
+
+    // start
+    init();
+  </script>
+</body>
+</html>
